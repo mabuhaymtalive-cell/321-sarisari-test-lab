@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>321 Sari-Sari Store — M9 Owner Orders TEST LAB</title>
+<style>
+:root{--navy:#102b55;--yellow:#ffd447;--bg:#f3f6fb;--ink:#17243a;--muted:#697789;--line:#dce3ed;--green:#e8f7ef;--red:#fff0ef}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 Arial,sans-serif}
+header{background:var(--navy);color:white;padding:18px 20px;border-bottom:6px solid var(--yellow)}
+header h1{font-size:21px;margin:0}header p{margin:4px 0 0;color:#dbe6f7;font-size:13px}
+main{max-width:900px;margin:18px auto;padding:0 14px 30px}.warning{padding:12px 14px;border:1px solid #e3b93b;background:#fff8dc;border-radius:12px;margin-bottom:14px;font-size:13px}
+.panel,.order,.rider{background:white;border:1px solid var(--line);border-radius:16px;padding:16px;margin:14px 0;box-shadow:0 2px 8px #17243a08}
+h2{font-size:20px;margin:0 0 12px}.muted{color:var(--muted);font-size:13px}
+label{display:block;font-weight:700;font-size:13px;margin:10px 0 5px}
+input,select,textarea{width:100%;padding:12px;border:1px solid #cbd5e1;border-radius:10px;background:white;font-size:16px;color:var(--ink)}
+button{border:0;border-radius:11px;padding:12px 15px;font-weight:700;font-size:15px;background:var(--navy);color:white;cursor:pointer}
+button.secondary{background:#eaf0f8;color:var(--navy)}button:disabled{opacity:.45;cursor:not-allowed}
+.row{display:flex;gap:9px;flex-wrap:wrap}.row>*{flex:1;min-width:125px}
+.status{padding:11px 13px;border-radius:10px;background:#edf2f8;margin-top:12px;font-size:14px;overflow-wrap:anywhere}
+.good{background:var(--green);color:#17633d}.bad{background:var(--red);color:#9a302b}
+.order h3,.rider h3{font-size:17px;margin:0 0 8px}.order p{margin:8px 0}.items{padding:9px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin:10px 0}
+.actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}.actions button{width:100%}
+.tag{display:inline-block;border-radius:99px;padding:3px 9px;background:#edf2f8;font-size:12px;font-weight:700}
+hr{border:0;border-top:1px solid var(--line);margin:16px 0}
+@media(max-width:520px){.actions{grid-template-columns:1fr}.row{flex-direction:column}.row>*{width:100%}}
+</style>
+</head>
+<body>
+<header><h1>321 Sari-Sari Store</h1><p>M9 Owner Order Management · TEST LAB ONLY · Not production</p></header>
+<main>
+<div class="warning"><b>TEST LAB ONLY.</b> This page connects only to Firebase project <b>sarisari-test-lab</b>. Use dummy test information. No stock deduction, sales posting, rider login, or delivery PIN is enabled in this phase. Do not use for real customer operations.</div>
+
+<section class="panel">
+<h2>TEST Owner Sign-in</h2>
+<label for="email">Owner email</label><input id="email" type="email" autocomplete="username">
+<label for="password">Owner password</label><input id="password" type="password" autocomplete="current-password">
+<div class="row" style="margin-top:12px"><button id="login">Sign in & load orders</button><button class="secondary" id="refresh" disabled>Refresh</button><button class="secondary" id="logout" disabled>Sign out</button></div>
+<div id="authStatus" class="status">Not signed in.</div>
+</section>
+
+<section class="panel">
+<h2>Rider / Salesman Profiles — TEST LAB</h2>
+<p class="muted">Only profiles marked Approved and Active can be assigned. New profiles start as Pending Approval. This is owner-managed profile data; no rider login is created.</p>
+<div id="riderList"><p class="muted">Sign in to load rider profiles.</p></div>
+<hr>
+<h3 style="margin:0">Add TEST rider / salesman</h3>
+<label for="riderName">Full name</label><input id="riderName" maxlength="100">
+<label for="riderPhone">Phone (test contact only)</label><input id="riderPhone" maxlength="30">
+<label for="riderRole">Role</label><select id="riderRole"><option>Rider</option><option>Salesman</option><option>Rider/Salesman</option></select>
+<label for="riderNotes">Notes (optional)</label><textarea id="riderNotes" rows="2" maxlength="300"></textarea>
+<button id="addRider" style="margin-top:10px" disabled>Save as Pending Approval</button>
+<div id="riderStatus" class="status">Owner sign-in required.</div>
+</section>
+
+<section class="panel">
+<h2>Online Customer Orders</h2>
+<p class="muted">Workflow: New → owner confirms delivery fee → Confirmed → assign approved active rider/salesman → Assigned. GCash orders must be manually verified before confirmation.</p>
+<div id="orders"><p class="muted">Sign in to load TEST LAB customerOrders.</p></div>
+</section>
+</main>
+<script>
+const API_KEY='AIzaSyCR0DT3NMWJEMqZN1_Y-C2LD90dbqOjNWY';
+const PROJECT='sarisari-test-lab';
+const OWNER_UID='ViCadvue0IM7qWO7br5gm0Wzyng1';
+const BASE='https://firestore.googleapis.com/v1/projects/'+PROJECT+'/databases/(default)/documents';
+const $=id=>document.getElementById(id);
+let ownerToken='',ownerUid='',orders=[],riders=[];
+function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function peso(v){return '₱'+Number(v||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})}
+function val(f){if(!f)return null;if('stringValue'in f)return f.stringValue;if('integerValue'in f)return Number(f.integerValue);if('doubleValue'in f)return Number(f.doubleValue);if('booleanValue'in f)return f.booleanValue;if('timestampValue'in f)return f.timestampValue;return null}
+function fromFields(f){let o={};for(const [k,v] of Object.entries(f||{})){if('mapValue'in v)o[k]=fromFields(v.mapValue.fields);else if('arrayValue'in v)o[k]=(v.arrayValue.values||[]).map(x=>x.mapValue?fromFields(x.mapValue.fields):val(x));else o[k]=val(v)}return o}
+function fsFields(o){let z={};for(const [k,v] of Object.entries(o)){if(v===null||v===undefined)continue;if(typeof v==='string')z[k]={stringValue:v};else if(typeof v==='boolean')z[k]={booleanValue:v};else if(typeof v==='number')z[k]=Number.isInteger(v)?{integerValue:String(v)}:{doubleValue:v};else if(Array.isArray(v))z[k]={arrayValue:{values:v.map(x=>({mapValue:{fields:fsFields(x)}}))}};else if(typeof v==='object')z[k]={mapValue:{fields:fsFields(v)}}}return z}
+async function authPost(path,body){const r=await fetch('https://identitytoolkit.googleapis.com/v1/'+path+'?key='+API_KEY,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const j=await r.json().catch(()=>({}));if(!r.ok)throw Error(j.error?.message||'Authentication request failed');return j}
+async function fsFetch(url,opts={}){const r=await fetch(url,{...opts,headers:{'Content-Type':'application/json','Authorization':'Bearer '+ownerToken,...(opts.headers||{})}});const j=await r.json().catch(()=>({}));if(!r.ok)throw Error(j.error?.message||('HTTP '+r.status));return j}
+async function queryCollection(name,limit=100){const q=await fsFetch(BASE+':runQuery',{method:'POST',body:JSON.stringify({structuredQuery:{from:[{collectionId:name}],limit}})});return(q||[]).filter(x=>x.document).map(x=>{const d=x.document;return{id:d.name.split('/').pop(),...fromFields(d.fields)}})}
+function status(el,msg,kind=''){el.textContent=msg;el.className='status '+kind}
+$('login').onclick=async()=>{const b=$('login');b.disabled=true;try{const a=await authPost('accounts:signInWithPassword',{email:$('email').value.trim(),password:$('password').value,returnSecureToken:true});if(a.localId!==OWNER_UID)throw Error('Signed-in account UID does not match the TEST Owner UID.');ownerToken=a.idToken;ownerUid=a.localId;$('password').value='';$('refresh').disabled=false;$('logout').disabled=false;$('addRider').disabled=false;status($('authStatus'),'TEST owner signed in. Loading orders and rider profiles...','good');await refreshAll()}catch(e){ownerToken='';ownerUid='';status($('authStatus'),'Sign-in failed: '+e.message,'bad')}finally{b.disabled=false}}
+$('refresh').onclick=refreshAll;
+$('logout').onclick=()=>{ownerToken='';ownerUid='';orders=[];riders=[];$('orders').innerHTML='<p class="muted">Signed out.</p>';$('riderList').innerHTML='<p class="muted">Signed out.</p>';$('refresh').disabled=true;$('logout').disabled=true;$('addRider').disabled=true;status($('authStatus'),'Signed out.')};
+async function refreshAll(){if(!ownerToken||ownerUid!==OWNER_UID)return;try{const [o,r]=await Promise.all([queryCollection('customerOrders',100),queryCollection('riderProfiles',100)]);orders=o.sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||'')));riders=r;renderRiders();renderOrders();status($('authStatus'),`Loaded ${orders.length} order(s) and ${riders.length} rider profile(s) from TEST LAB.`,'good')}catch(e){status($('authStatus'),'Read failed: '+e.message,'bad')}}
+function renderRiders(){const approved=riders.filter(r=>r.approvalStatus==='Approved'&&r.status==='Active');$('riderList').innerHTML=riders.length?riders.map(r=>`<div class="rider"><h3>${esc(r.name||'Unnamed')}</h3><div class="muted">${esc(r.phone||'No phone')} · ${esc(r.role||'Rider/Salesman')}</div><p><span class="tag">${esc(r.approvalStatus||'Pending Approval')}</span> <span class="tag">${esc(r.status||'Active')}</span></p>${r.approvalStatus!=='Approved'?`<button class="secondary" data-approve-rider="${esc(r.id)}">Approve profile</button>`:''}</div>`).join(''):'<p class="muted">No TEST rider profiles found. Add a test profile below; it will start Pending Approval.</p>';$('riderStatus').textContent=`${approved.length} approved active rider/salesman profile(s) available for assignment.`;document.querySelectorAll('[data-approve-rider]').forEach(b=>b.onclick=()=>approveRider(b.dataset.approveRider))}
+function renderOrders(){$('orders').innerHTML=orders.map(o=>{const canConfirm=o.status==='New'&&!!o.deliveryFeeConfirmedAt&&(o.paymentMethod!=='GCash'||o.paymentStatus==='Verified');const canAssign=['Confirmed','Assigned'].includes(o.status);const approved=riders.filter(r=>r.approvalStatus==='Approved'&&r.status==='Active');return `<article class="order"><h3>${esc(o.customer?.name||'Customer')} <span class="tag">${esc(o.status||'New')}</span></h3><div class="muted">${esc(o.customer?.phone||'')} · ${esc(o.customer?.area||'')}<br>${esc(o.customer?.address||'')}</div><div class="items">${(o.items||[]).map(i=>`${esc(i.name)} × ${Number(i.quantity)||0} — ${peso(i.lineTotal)}`).join('<br>')}</div><p><b>Subtotal:</b> ${peso(o.subtotal)} · <b>Delivery fee:</b> ${peso(o.deliveryFee||0)}</p><p><b>Payment:</b> ${esc(o.paymentMethod||'')} (${esc(o.paymentStatus||'Pending')})</p><p><b>Assigned rider:</b> ${esc(o.riderName||'Not assigned')}</p><label for="fee-${esc(o.id)}">Owner-confirmed delivery fee (₱)</label><input id="fee-${esc(o.id)}" type="number" min="0" max="100000" step="0.01" value="${Number(o.deliveryFee)||0}" ${o.status!=='New'||o.deliveryFeeConfirmedAt?'disabled':''}><button class="secondary" data-fee="${esc(o.id)}" ${o.status!=='New'||o.deliveryFeeConfirmedAt?'disabled':''}>Save delivery fee</button><label for="assign-${esc(o.id)}">Approved active rider / salesman</label><select id="assign-${esc(o.id)}" ${!canAssign?'disabled':''}><option value="">Choose rider/salesman</option>${approved.map(r=>`<option value="${esc(r.id)}" ${r.id===o.riderId?'selected':''}>${esc(r.name)} — ${esc(r.role)}</option>`).join('')}</select><div class="actions"><button data-confirm="${esc(o.id)}" ${!canConfirm?'disabled':''}>Confirm order</button><button data-assign="${esc(o.id)}" ${!canAssign||!approved.length?'disabled':''}>Assign rider</button></div><p class="muted">Order ID: ${esc(o.id)}<br>${o.paymentMethod==='GCash'&&o.paymentStatus!=='Verified'?'GCash is still Pending; owner verification is required before confirmation.':'Confirm delivery fee before confirming this order.'}</p></article>`}).join('')||'<p class="muted">No online orders found.</p>';
+document.querySelectorAll('[data-fee]').forEach(b=>b.onclick=()=>saveFee(b.dataset.fee));
+document.querySelectorAll('[data-confirm]').forEach(b=>b.onclick=()=>confirmOrder(b.dataset.confirm));
+document.querySelectorAll('[data-assign]').forEach(b=>b.onclick=()=>assignRider(b.dataset.assign))}
+function docName(collection,id){return 'projects/'+PROJECT+'/databases/(default)/documents/'+collection+'/'+id}
+async function commitUpdate(collection,id,fields,transforms=[]){const write={update:{name:docName(collection,id),fields:fsFields(fields)},updateMask:{fieldPaths:Object.keys(fields)}};if(transforms.length)write.updateTransforms=transforms;await fsFetch(BASE+':commit',{method:'POST',body:JSON.stringify({writes:[write]})})}
+async function saveFee(id){const o=orders.find(x=>x.id===id);if(!o||o.status!=='New'||o.deliveryFeeConfirmedAt){status($('authStatus'),'This order fee is already locked.','bad');return}const fee=Number($('fee-'+id).value);if(!Number.isFinite(fee)||fee<0||fee>100000){status($('authStatus'),'Enter a valid delivery fee from ₱0 to ₱100,000.','bad');return}if(o.customer?.area==='Store Pickup'&&fee!==0){status($('authStatus'),'Store Pickup must have ₱0 delivery fee.','bad');return}try{await commitUpdate('customerOrders',id,{deliveryFee:fee},[{fieldPath:'deliveryFeeConfirmedAt',setToServerValue:'REQUEST_TIME'}]);await refreshAll()}catch(e){status($('authStatus'),'Saving fee failed: '+e.message,'bad')}}
+async function confirmOrder(id){const o=orders.find(x=>x.id===id);if(!o||o.status!=='New'||!o.deliveryFeeConfirmedAt)return;if(o.paymentMethod==='GCash'&&o.paymentStatus!=='Verified'){status($('authStatus'),'GCash must be manually verified before order confirmation.','bad');return}try{await commitUpdate('customerOrders',id,{status:'Confirmed'},[{fieldPath:'ownerConfirmedAt',setToServerValue:'REQUEST_TIME'}]);await refreshAll()}catch(e){status($('authStatus'),'Order confirmation failed: '+e.message,'bad')}}
+async function assignRider(id){const o=orders.find(x=>x.id===id);if(!o||!['Confirmed','Assigned'].includes(o.status))return;const rid=$('assign-'+id).value;const r=riders.find(x=>x.id===rid&&x.approvalStatus==='Approved'&&x.status==='Active');if(!r){status($('authStatus'),'Choose an approved active rider/salesman first.','bad');return}try{await commitUpdate('customerOrders',id,{status:'Assigned',riderId:r.id,riderName:r.name,riderRole:r.role||'Rider/Salesman',salesAttributionStatus:'Assigned to rider'},[{fieldPath:'assignedAt',setToServerValue:'REQUEST_TIME'}]);await refreshAll()}catch(e){status($('authStatus'),'Rider assignment failed: '+e.message,'bad')}}
+$('addRider').onclick=async()=>{const name=$('riderName').value.trim(),phone=$('riderPhone').value.trim(),role=$('riderRole').value,notes=$('riderNotes').value.trim();if(name.length<2){status($('riderStatus'),'Enter rider/salesman name (at least 2 characters).','bad');return}const id='r_'+crypto.randomUUID().replaceAll('-','');try{const fields={id,name,phone,role,status:'Active',approvalStatus:'Pending Approval',notes};const write={update:{name:docName('riderProfiles',id),fields:fsFields(fields)},updateMask:{fieldPaths:Object.keys(fields)},updateTransforms:[{fieldPath:'createdAt',setToServerValue:'REQUEST_TIME'}]};await fsFetch(BASE+':commit',{method:'POST',body:JSON.stringify({writes:[write]})});$('riderName').value='';$('riderPhone').value='';$('riderNotes').value='';await refreshAll();status($('riderStatus'),'Rider/salesman profile saved as Pending Approval. Approve it before assigning.','good')}catch(e){status($('riderStatus'),'Profile save failed: '+e.message,'bad')}}
+async function approveRider(id){const r=riders.find(x=>x.id===id);if(!r)return;if(!confirm('Approve '+r.name+' for TEST LAB owner assignment?'))return;try{const write={update:{name:docName('riderProfiles',id),fields:fsFields({approvalStatus:'Approved'})},updateMask:{fieldPaths:['approvalStatus']},updateTransforms:[{fieldPath:'approvedAt',setToServerValue:'REQUEST_TIME'}]};await fsFetch(BASE+':commit',{method:'POST',body:JSON.stringify({writes:[write]})});await refreshAll()}catch(e){status($('riderStatus'),'Approval failed: '+e.message,'bad')}}
+</script>
+</body>
+</html>
