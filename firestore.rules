@@ -1,9 +1,9 @@
-// 321 Sari-Sari Store — Firestore Rules V11.2 — M9 TEST LAB CORRECTED COPY
+// 321 Sari-Sari Store — Firestore Rules V11.3 — M9 TEST LAB OPTIMIZED CANDIDATE
 // Intended project: sarisari-test-lab (321-SariSari-Test-Lab)
 // TEST Owner UID: ViCadvue0IM7qWO7br5gm0Wzyng1
 // TEST LAB ONLY. NEVER publish to production project sarisaristore321-1f24b.
-// Corrects Assigned -> Assigned rider reassignment and validates rider eligibility.
-// Review this file and keep a backup of the currently published V11.1 before publishing.
+// Optimizes catalog and rider profile lookups while retaining V11.2 restrictions.
+// TEST CANDIDATE ONLY. Run the complete Emulator suite before any separate deployment decision.
 
 rules_version = '2';
 service cloud.firestore {
@@ -39,7 +39,9 @@ service cloud.firestore {
         && (c.area == 'Store Pickup' || c.address.size() >= 3);
     }
 
+    // V11.3: one catalog document lookup per item; missing products fail closed.
     function validOneItem(i) {
+      let product = get(/databases/$(database)/documents/publicCatalog/$(i.productId));
       return i is map
         && i.keys().hasAll(['productId', 'name', 'unit', 'quantity', 'unitPrice', 'lineTotal'])
         && i.keys().hasOnly(['productId', 'name', 'unit', 'quantity', 'unitPrice', 'lineTotal'])
@@ -51,11 +53,10 @@ service cloud.firestore {
         && i.lineTotal is number && i.lineTotal >= 0
         && i.lineTotal >= (i.unitPrice * i.quantity) - 0.000001
         && i.lineTotal <= (i.unitPrice * i.quantity) + 0.000001
-        && exists(/databases/$(database)/documents/publicCatalog/$(i.productId))
-        && get(/databases/$(database)/documents/publicCatalog/$(i.productId)).data.active == true
-        && get(/databases/$(database)/documents/publicCatalog/$(i.productId)).data.name == i.name
-        && get(/databases/$(database)/documents/publicCatalog/$(i.productId)).data.unit == i.unit
-        && get(/databases/$(database)/documents/publicCatalog/$(i.productId)).data.price == i.unitPrice;
+        && product.data.active == true
+        && product.data.name == i.name
+        && product.data.unit == i.unit
+        && product.data.price == i.unitPrice;
     }
 
     function validItems() {
@@ -140,15 +141,16 @@ service cloud.firestore {
 
     // Rider profile document IDs are the rider Auth UIDs for UID-linked profiles.
     // Only approved, active Rider or Rider/Salesman profiles are eligible.
+    // V11.3: one rider profile document lookup per eligibility check.
     function eligibleRider(riderId, riderName, riderRole) {
+      let profile = get(/databases/$(database)/documents/riderProfiles/$(riderId));
       return riderId is string && riderId.size() > 0
         && riderName is string && riderName.size() > 0
         && riderRole in ['Rider', 'Rider/Salesman']
-        && exists(/databases/$(database)/documents/riderProfiles/$(riderId))
-        && get(/databases/$(database)/documents/riderProfiles/$(riderId)).data.approvalStatus == 'Approved'
-        && get(/databases/$(database)/documents/riderProfiles/$(riderId)).data.status == 'Active'
-        && get(/databases/$(database)/documents/riderProfiles/$(riderId)).data.name == riderName
-        && get(/databases/$(database)/documents/riderProfiles/$(riderId)).data.role == riderRole;
+        && profile.data.approvalStatus == 'Approved'
+        && profile.data.status == 'Active'
+        && profile.data.name == riderName
+        && profile.data.role == riderRole;
     }
 
     function validStatusTransition() {
