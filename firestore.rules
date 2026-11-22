@@ -1,0 +1,253 @@
+// 321 Sari-Sari Store — Firestore Rules V11.2 — M9 TEST LAB CORRECTED COPY
+// Intended project: sarisari-test-lab (321-SariSari-Test-Lab)
+// TEST Owner UID: ViCadvue0IM7qWO7br5gm0Wzyng1
+// TEST LAB ONLY. NEVER publish to production project sarisaristore321-1f24b.
+// Corrects Assigned -> Assigned rider reassignment and validates rider eligibility.
+// Review this file and keep a backup of the currently published V11.1 before publishing.
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isTestOwner() {
+      return signedIn()
+        && request.auth.uid == 'ViCadvue0IM7qWO7br5gm0Wzyng1';
+    }
+
+    function isAnonymousCustomer() {
+      return signedIn()
+        && request.auth.token.firebase.sign_in_provider == 'anonymous';
+    }
+
+    function validCustomer() {
+      let c = request.resource.data.customer;
+      return c is map
+        && c.keys().hasAll(['name', 'phone', 'address', 'area'])
+        && c.keys().hasOnly(['name', 'phone', 'address', 'area'])
+        && c.name is string && c.name.size() >= 2 && c.name.size() <= 100
+        && c.phone is string && c.phone.size() >= 7 && c.phone.size() <= 30
+        && c.address is string && c.address.size() <= 300
+        && c.area is string
+        && c.area in [
+          'San Carlos City Proper', 'Vallehermoso', 'Canlaon City',
+          'Don Salvador Benedicto (DSB)', 'Calatrava', 'Toboso', 'Store Pickup'
+        ]
+        && (c.area == 'Store Pickup' || c.address.size() >= 3);
+    }
+
+    function validOneItem(i) {
+      return i is map
+        && i.keys().hasAll(['productId', 'name', 'unit', 'quantity', 'unitPrice', 'lineTotal'])
+        && i.keys().hasOnly(['productId', 'name', 'unit', 'quantity', 'unitPrice', 'lineTotal'])
+        && i.productId is string && i.productId.size() > 0 && i.productId.size() <= 150
+        && i.name is string && i.name.size() > 0 && i.name.size() <= 150
+        && i.unit is string && i.unit.size() > 0 && i.unit.size() <= 40
+        && i.quantity is int && i.quantity >= 1 && i.quantity <= 99
+        && i.unitPrice is number && i.unitPrice >= 0
+        && i.lineTotal is number && i.lineTotal >= 0
+        && i.lineTotal >= (i.unitPrice * i.quantity) - 0.000001
+        && i.lineTotal <= (i.unitPrice * i.quantity) + 0.000001
+        && exists(/databases/$(database)/documents/publicCatalog/$(i.productId))
+        && get(/databases/$(database)/documents/publicCatalog/$(i.productId)).data.active == true
+        && get(/databases/$(database)/documents/publicCatalog/$(i.productId)).data.name == i.name
+        && get(/databases/$(database)/documents/publicCatalog/$(i.productId)).data.unit == i.unit
+        && get(/databases/$(database)/documents/publicCatalog/$(i.productId)).data.price == i.unitPrice;
+    }
+
+    function validItems() {
+      let a = request.resource.data.items;
+      return a is list && a.size() >= 1 && a.size() <= 5
+        && validOneItem(a[0])
+        && (a.size() < 2 || validOneItem(a[1]))
+        && (a.size() < 3 || validOneItem(a[2]))
+        && (a.size() < 4 || validOneItem(a[3]))
+        && (a.size() < 5 || validOneItem(a[4]));
+    }
+
+    function calculatedSubtotal() {
+      let a = request.resource.data.items;
+      let total = a[0].lineTotal
+        + (a.size() > 1 ? a[1].lineTotal : 0)
+        + (a.size() > 2 ? a[2].lineTotal : 0)
+        + (a.size() > 3 ? a[3].lineTotal : 0)
+        + (a.size() > 4 ? a[4].lineTotal : 0);
+      return request.resource.data.subtotal is number
+        && request.resource.data.subtotal >= total - 0.000001
+        && request.resource.data.subtotal <= total + 0.000001;
+    }
+
+    function validCustomerOrderCreate() {
+      let d = request.resource.data;
+      return isAnonymousCustomer()
+        && d.keys().hasAll([
+          'customerUid', 'customer', 'items', 'subtotal', 'deliveryFee',
+          'paymentMethod', 'paymentStatus', 'notes', 'status', 'riderId',
+          'riderName', 'salesAttributionStatus', 'createdAt', 'source'
+        ])
+        && d.keys().hasOnly([
+          'customerUid', 'customer', 'items', 'subtotal', 'deliveryFee',
+          'paymentMethod', 'paymentStatus', 'notes', 'status', 'riderId',
+          'riderName', 'salesAttributionStatus', 'createdAt', 'source'
+        ])
+        && d.customerUid == request.auth.uid
+        && validCustomer()
+        && validItems()
+        && calculatedSubtotal()
+        && d.deliveryFee is number && d.deliveryFee == 0
+        && d.paymentMethod in ['COD', 'GCash']
+        && d.paymentStatus == 'Pending'
+        && d.notes is string && d.notes.size() <= 500
+        && d.status == 'New'
+        && d.riderId == '' && d.riderName == ''
+        && d.salesAttributionStatus == 'Pending owner review'
+        && d.createdAt == request.time
+        && d.source == 'online';
+    }
+
+    function onlyFeeFieldsChanged() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['deliveryFee', 'deliveryFeeConfirmedAt'])
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasAll(['deliveryFee', 'deliveryFeeConfirmedAt'])
+        && resource.data.status == 'New'
+        && !('deliveryFeeConfirmedAt' in resource.data)
+        && request.resource.data.deliveryFee is number
+        && request.resource.data.deliveryFee >= 0
+        && request.resource.data.deliveryFee <= 100000
+        && request.resource.data.deliveryFeeConfirmedAt == request.time
+        && (resource.data.customer.area != 'Store Pickup' || request.resource.data.deliveryFee == 0);
+    }
+
+    function onlyGcashVerificationChanged() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['paymentStatus', 'paymentReference', 'paymentVerifiedAt', 'paymentVerifiedBy'])
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasAll(['paymentStatus', 'paymentReference', 'paymentVerifiedAt', 'paymentVerifiedBy'])
+        && resource.data.status == 'New'
+        && resource.data.paymentMethod == 'GCash'
+        && resource.data.paymentStatus == 'Pending'
+        && request.resource.data.paymentStatus == 'Verified'
+        && request.resource.data.paymentReference is string
+        && request.resource.data.paymentReference.size() >= 4
+        && request.resource.data.paymentReference.size() <= 80
+        && request.resource.data.paymentVerifiedAt == request.time
+        && request.resource.data.paymentVerifiedBy == request.auth.uid;
+    }
+
+    // Rider profile document IDs are the rider Auth UIDs for UID-linked profiles.
+    // Only approved, active Rider or Rider/Salesman profiles are eligible.
+    function eligibleRider(riderId, riderName, riderRole) {
+      return riderId is string && riderId.size() > 0
+        && riderName is string && riderName.size() > 0
+        && riderRole in ['Rider', 'Rider/Salesman']
+        && exists(/databases/$(database)/documents/riderProfiles/$(riderId))
+        && get(/databases/$(database)/documents/riderProfiles/$(riderId)).data.approvalStatus == 'Approved'
+        && get(/databases/$(database)/documents/riderProfiles/$(riderId)).data.status == 'Active'
+        && get(/databases/$(database)/documents/riderProfiles/$(riderId)).data.name == riderName
+        && get(/databases/$(database)/documents/riderProfiles/$(riderId)).data.role == riderRole;
+    }
+
+    function validStatusTransition() {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      let next = request.resource.data.status;
+      return (
+        // New -> Confirmed
+        (resource.data.status == 'New' && next == 'Confirmed'
+          && changed.hasOnly(['status', 'ownerConfirmedAt'])
+          && changed.hasAll(['status', 'ownerConfirmedAt'])
+          && request.resource.data.ownerConfirmedAt == request.time
+          && 'deliveryFeeConfirmedAt' in resource.data
+          && (resource.data.paymentMethod != 'GCash' || resource.data.paymentStatus == 'Verified'))
+        ||
+        // Confirmed -> Assigned
+        (resource.data.status == 'Confirmed' && next == 'Assigned'
+          && changed.hasOnly(['status', 'riderId', 'riderName', 'riderRole', 'assignedAt', 'salesAttributionStatus'])
+          && changed.hasAll(['status', 'riderId', 'riderName', 'riderRole', 'assignedAt'])
+          && eligibleRider(request.resource.data.riderId, request.resource.data.riderName, request.resource.data.riderRole)
+          && request.resource.data.assignedAt == request.time
+          && request.resource.data.salesAttributionStatus == 'Assigned to rider')
+        ||
+        // Assigned -> Assigned (reassignment): status is unchanged, so it is NOT
+        // expected to appear in affectedKeys(). Require a real rider-field change.
+        (resource.data.status == 'Assigned' && next == 'Assigned'
+          && changed.hasOnly(['riderId', 'riderName', 'riderRole', 'assignedAt', 'salesAttributionStatus'])
+          && changed.hasAny(['riderId', 'riderName', 'riderRole'])
+          && changed.hasAll(['assignedAt'])
+          && eligibleRider(request.resource.data.riderId, request.resource.data.riderName, request.resource.data.riderRole)
+          && request.resource.data.assignedAt == request.time
+          && request.resource.data.salesAttributionStatus == 'Assigned to rider')
+        ||
+        // Assigned -> Out for Delivery (owner-only in this test phase)
+        (resource.data.status == 'Assigned' && next == 'Out for Delivery'
+          && changed.hasOnly(['status', 'outForDeliveryAt'])
+          && changed.hasAll(['status', 'outForDeliveryAt'])
+          && request.resource.data.outForDeliveryAt == request.time)
+        ||
+        // Out for Delivery -> Delivered (owner-only in this test phase; NOT secure rider PIN proof)
+        (resource.data.status == 'Out for Delivery' && next == 'Delivered'
+          && changed.hasOnly(['status', 'deliveredAt', 'salesAttributionStatus'])
+          && changed.hasAll(['status', 'deliveredAt'])
+          && request.resource.data.deliveredAt == request.time
+          && request.resource.data.salesAttributionStatus == 'Delivered — owner review required')
+        ||
+        // Cancellation
+        (resource.data.status in ['New', 'Confirmed', 'Assigned'] && next == 'Cancelled'
+          && changed.hasOnly(['status', 'cancelReason', 'cancelledAt', 'salesAttributionStatus'])
+          && changed.hasAll(['status', 'cancelReason', 'cancelledAt'])
+          && request.resource.data.cancelReason is string
+          && request.resource.data.cancelReason.size() >= 1
+          && request.resource.data.cancelReason.size() <= 300
+          && request.resource.data.cancelledAt == request.time
+          && request.resource.data.salesAttributionStatus == 'Cancelled — no incentive')
+      );
+    }
+
+    match /publicCatalog/{productId} {
+      allow get, list: if isAnonymousCustomer() && resource.data.active == true;
+      allow create, update, delete: if isTestOwner();
+    }
+
+    match /customerOrders/{orderId} {
+      allow create: if validCustomerOrderCreate();
+      allow get: if isTestOwner()
+        || (isAnonymousCustomer() && resource.data.customerUid == request.auth.uid);
+      allow list: if isTestOwner();
+      allow update: if isTestOwner()
+        && (onlyFeeFieldsChanged() || onlyGcashVerificationChanged() || validStatusTransition());
+      allow delete: if false;
+    }
+
+    match /storeProducts/{productId} {
+      allow read, write: if isTestOwner();
+    }
+    match /storeSettings/{settingsId} {
+      allow read, write: if isTestOwner();
+    }
+    match /riderProfiles/{uid} {
+      allow read, write: if isTestOwner();
+    }
+    match /riderAttendance/{attendanceId} {
+      allow read, write: if isTestOwner();
+    }
+    match /riderAssignments/{assignmentId} {
+      allow read, write: if isTestOwner();
+    }
+    match /storeSales/{saleId} {
+      allow read, write: if isTestOwner();
+    }
+    match /riderOrders/{orderId} {
+      allow read, write: if false;
+    }
+    match /deliverySecrets/{orderId} {
+      allow read, write: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
