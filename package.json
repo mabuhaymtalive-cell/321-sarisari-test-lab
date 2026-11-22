@@ -1,0 +1,15 @@
+{
+  "name": "321-sarisari-firestore-security-tests",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test": "mocha --timeout 20000 tests/**/*.test.js",
+    "test:emulator": "firebase emulators:exec --only firestore --project demo-321-sarisari-test-lab \"npm test\""
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^4.0.1",
+    "firebase": "^11.0.0",
+    "firebase-tools": "^13.29.2",
+    "mocha": "^10.8.2"
+  }
+}
