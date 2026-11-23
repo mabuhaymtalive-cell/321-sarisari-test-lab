@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - security-tests-v11-2
+      - m10-repair-candidate
 
 jobs:
   firestore-security-tests:
