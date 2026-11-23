@@ -86,21 +86,30 @@ service cloud.firestore {
       return isAnonymousCustomer()
         && d.keys().hasAll([
           'customerUid', 'customer', 'items', 'subtotal', 'deliveryFee',
-          'paymentMethod', 'paymentStatus', 'notes', 'status', 'riderId',
+          'paymentMethod', 'paymentStatus', 'paymentSenderName', 'paymentSenderNumber',
+          'buyerPaymentReference', 'paymentAmount', 'notes', 'status', 'riderId',
           'riderName', 'salesAttributionStatus', 'createdAt', 'source'
         ])
         && d.keys().hasOnly([
           'customerUid', 'customer', 'items', 'subtotal', 'deliveryFee',
-          'paymentMethod', 'paymentStatus', 'notes', 'status', 'riderId',
+          'paymentMethod', 'paymentStatus', 'paymentSenderName', 'paymentSenderNumber',
+          'buyerPaymentReference', 'paymentAmount', 'notes', 'status', 'riderId',
           'riderName', 'salesAttributionStatus', 'createdAt', 'source'
         ])
         && d.customerUid == request.auth.uid
         && validCustomer()
         && validItems()
         && calculatedSubtotal()
-        && d.deliveryFee is number && d.deliveryFee == 0
-        && d.paymentMethod in ['COD', 'GCash']
+        && d.deliveryFee is number
+        && d.deliveryFee == (d.customer.area == 'San Carlos City Proper' ? 30 : 0)
+        && d.paymentMethod in ['COD', 'GCash', 'BDO Bank Transfer']
         && d.paymentStatus == 'Pending'
+        && d.paymentSenderName is string && d.paymentSenderName.size() <= 100
+        && d.paymentSenderNumber is string && d.paymentSenderNumber.size() <= 30
+        && d.buyerPaymentReference is string && d.buyerPaymentReference.size() <= 80
+        && d.paymentAmount is number && d.paymentAmount >= 0
+        && (d.paymentMethod != 'COD' || (d.paymentSenderName == '' && d.paymentSenderNumber == '' && d.buyerPaymentReference == '' && d.paymentAmount == 0))
+        && (d.paymentMethod == 'COD' || d.paymentSenderName.size() >= 2)
         && d.notes is string && d.notes.size() <= 500
         && d.status == 'New'
         && d.riderId == '' && d.riderName == ''
@@ -113,9 +122,9 @@ service cloud.firestore {
       return request.resource.data.diff(resource.data).affectedKeys()
         .hasOnly(['deliveryFee', 'deliveryFeeConfirmedAt'])
         && request.resource.data.diff(resource.data).affectedKeys()
-          .hasAll(['deliveryFee', 'deliveryFeeConfirmedAt'])
+          .hasAll(['deliveryFeeConfirmedAt'])
         && resource.data.status == 'New'
-        && !('deliveryFeeConfirmedAt' in resource.data)
+        && !('deliveryFeeAccepted' in resource.data)
         && request.resource.data.deliveryFee is number
         && request.resource.data.deliveryFee >= 0
         && request.resource.data.deliveryFee <= 100000
@@ -123,18 +132,41 @@ service cloud.firestore {
         && (resource.data.customer.area != 'Store Pickup' || request.resource.data.deliveryFee == 0);
     }
 
-    function onlyGcashVerificationChanged() {
-      return request.resource.data.diff(resource.data).affectedKeys()
-        .hasOnly(['paymentStatus', 'paymentReference', 'paymentVerifiedAt', 'paymentVerifiedBy'])
-        && request.resource.data.diff(resource.data).affectedKeys()
-          .hasAll(['paymentStatus', 'paymentReference', 'paymentVerifiedAt', 'paymentVerifiedBy'])
+    // Customer accepts the owner's final delivery-fee quote. One-time, same UID only.
+    function onlyCustomerQuoteAcceptanceChanged() {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      let online = resource.data.paymentMethod in ['GCash', 'BDO Bank Transfer'];
+      return isAnonymousCustomer()
+        && resource.data.customerUid == request.auth.uid
         && resource.data.status == 'New'
-        && resource.data.paymentMethod == 'GCash'
+        && 'deliveryFeeConfirmedAt' in resource.data
+        && !('deliveryFeeAccepted' in resource.data)
+        && changed.hasOnly(['deliveryFeeAccepted', 'deliveryFeeAcceptedAt', 'paymentAmount', 'postQuotePaymentReference'])
+        && changed.hasAll(['deliveryFeeAccepted', 'deliveryFeeAcceptedAt'])
+        && request.resource.data.deliveryFeeAccepted == true
+        && request.resource.data.deliveryFeeAcceptedAt == request.time
+        && ((!online && !changed.hasAny(['paymentAmount', 'postQuotePaymentReference']))
+          || (online
+            && changed.hasAll(['paymentAmount', 'postQuotePaymentReference'])
+            && request.resource.data.paymentAmount is number
+            && request.resource.data.paymentAmount == resource.data.subtotal + resource.data.deliveryFee
+            && request.resource.data.postQuotePaymentReference is string
+            && request.resource.data.postQuotePaymentReference.size() >= 4
+            && request.resource.data.postQuotePaymentReference.size() <= 80));
+    }
+
+    function onlyPaymentVerificationChanged() {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      return changed.hasOnly(['paymentStatus', 'paymentVerifiedReference', 'paymentVerifiedAt', 'paymentVerifiedBy'])
+        && changed.hasAll(['paymentStatus', 'paymentVerifiedReference', 'paymentVerifiedAt', 'paymentVerifiedBy'])
+        && resource.data.status == 'New'
+        && resource.data.paymentMethod in ['GCash', 'BDO Bank Transfer']
         && resource.data.paymentStatus == 'Pending'
+        && resource.data.deliveryFeeAccepted == true
         && request.resource.data.paymentStatus == 'Verified'
-        && request.resource.data.paymentReference is string
-        && request.resource.data.paymentReference.size() >= 4
-        && request.resource.data.paymentReference.size() <= 80
+        && request.resource.data.paymentVerifiedReference is string
+        && request.resource.data.paymentVerifiedReference.size() >= 4
+        && request.resource.data.paymentVerifiedReference.size() <= 80
         && request.resource.data.paymentVerifiedAt == request.time
         && request.resource.data.paymentVerifiedBy == request.auth.uid;
     }
@@ -163,7 +195,8 @@ service cloud.firestore {
           && changed.hasAll(['status', 'ownerConfirmedAt'])
           && request.resource.data.ownerConfirmedAt == request.time
           && 'deliveryFeeConfirmedAt' in resource.data
-          && (resource.data.paymentMethod != 'GCash' || resource.data.paymentStatus == 'Verified'))
+          && resource.data.deliveryFeeAccepted == true
+          && (resource.data.paymentMethod == 'COD' || resource.data.paymentStatus == 'Verified'))
         ||
         // Confirmed -> Assigned
         (resource.data.status == 'Confirmed' && next == 'Assigned'
@@ -218,8 +251,9 @@ service cloud.firestore {
       allow get: if isTestOwner()
         || (isAnonymousCustomer() && resource.data.customerUid == request.auth.uid);
       allow list: if isTestOwner();
-      allow update: if isTestOwner()
-        && (onlyFeeFieldsChanged() || onlyGcashVerificationChanged() || validStatusTransition());
+      allow update: if (isTestOwner()
+        && (onlyFeeFieldsChanged() || onlyPaymentVerificationChanged() || validStatusTransition()))
+        || onlyCustomerQuoteAcceptanceChanged();
       allow delete: if false;
     }
 
