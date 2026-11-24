@@ -1,9 +1,3 @@
-// 321 Sari-Sari Store — Firestore Rules V11.3 — M9 TEST LAB OPTIMIZED CANDIDATE
-// Intended project: sarisari-test-lab (321-SariSari-Test-Lab)
-// TEST Owner UID: ViCadvue0IM7qWO7br5gm0Wzyng1
-// TEST LAB ONLY. NEVER publish to production project sarisaristore321-1f24b.
-// Optimizes catalog and rider profile lookups while retaining V11.2 restrictions.
-// TEST CANDIDATE ONLY. Run the complete Emulator suite before any separate deployment decision.
 
 rules_version = '2';
 service cloud.firestore {
@@ -31,37 +25,64 @@ service cloud.firestore {
         && c.name is string && c.name.size() >= 2 && c.name.size() <= 100
         && c.phone is string && c.phone.size() >= 7 && c.phone.size() <= 30
         && c.address is string && c.address.size() <= 300
-        && c.area is string
         && c.area in [
-          'San Carlos City Proper', 'Vallehermoso', 'Canlaon City',
-          'Don Salvador Benedicto (DSB)', 'Calatrava', 'Toboso', 'Store Pickup'
+          'San Carlos City Proper',
+          'Vallehermoso',
+          'Canlaon City',
+          'Don Salvador Benedicto (DSB)',
+          'Calatrava',
+          'Toboso',
+          'Store Pickup'
         ]
         && (c.area == 'Store Pickup' || c.address.size() >= 3);
     }
 
-    // V11.3: one catalog document lookup per item; missing products fail closed.
-    function validOneItem(i) {
-      let product = get(/databases/$(database)/documents/publicCatalog/$(i.productId));
-      return i is map
-        && i.keys().hasAll(['productId', 'name', 'unit', 'quantity', 'unitPrice', 'lineTotal'])
-        && i.keys().hasOnly(['productId', 'name', 'unit', 'quantity', 'unitPrice', 'lineTotal'])
-        && i.productId is string && i.productId.size() > 0 && i.productId.size() <= 150
-        && i.name is string && i.name.size() > 0 && i.name.size() <= 150
-        && i.unit is string && i.unit.size() > 0 && i.unit.size() <= 40
-        && i.quantity is int && i.quantity >= 1 && i.quantity <= 99
-        && i.unitPrice is number && i.unitPrice >= 0
-        && i.lineTotal is number && i.lineTotal >= 0
-        && i.lineTotal >= (i.unitPrice * i.quantity) - 0.000001
-        && i.lineTotal <= (i.unitPrice * i.quantity) + 0.000001
-        && product.data.active == true
+    function catalogItemMatches(i) {
+      let product = get(
+        /databases/$(database)/documents/publicCatalog/$(i.productId)
+      );
+      return product.data.active == true
         && product.data.name == i.name
         && product.data.unit == i.unit
         && product.data.price == i.unitPrice;
     }
 
+    function validOneItem(i) {
+      return i is map
+        && i.keys().hasAll([
+          'productId', 'name', 'unit',
+          'quantity', 'unitPrice', 'lineTotal'
+        ])
+        && i.keys().hasOnly([
+          'productId', 'name', 'unit',
+          'quantity', 'unitPrice', 'lineTotal'
+        ])
+        && i.productId is string
+        && i.productId.size() > 0
+        && i.productId.size() <= 150
+        && i.name is string
+        && i.name.size() > 0
+        && i.name.size() <= 150
+        && i.unit is string
+        && i.unit.size() > 0
+        && i.unit.size() <= 40
+        && i.quantity is int
+        && i.quantity >= 1
+        && i.quantity <= 99
+        && i.unitPrice is number
+        && i.unitPrice >= 0
+        && i.lineTotal is number
+        && i.lineTotal >= 0
+        && i.lineTotal >= (i.unitPrice * i.quantity) - 0.000001
+        && i.lineTotal <= (i.unitPrice * i.quantity) + 0.000001
+        && catalogItemMatches(i);
+    }
+
     function validItems() {
       let a = request.resource.data.items;
-      return a is list && a.size() >= 1 && a.size() <= 5
+      return a is list
+        && a.size() >= 1
+        && a.size() <= 5
         && validOneItem(a[0])
         && (a.size() < 2 || validOneItem(a[1]))
         && (a.size() < 3 || validOneItem(a[2]))
@@ -76,6 +97,7 @@ service cloud.firestore {
         + (a.size() > 2 ? a[2].lineTotal : 0)
         + (a.size() > 3 ? a[3].lineTotal : 0)
         + (a.size() > 4 ? a[4].lineTotal : 0);
+
       return request.resource.data.subtotal is number
         && request.resource.data.subtotal >= total - 0.000001
         && request.resource.data.subtotal <= total + 0.000001;
@@ -83,84 +105,147 @@ service cloud.firestore {
 
     function validCustomerOrderCreate() {
       let d = request.resource.data;
+
       return isAnonymousCustomer()
         && d.keys().hasAll([
-          'customerUid', 'customer', 'items', 'subtotal', 'deliveryFee',
-          'paymentMethod', 'paymentStatus', 'paymentSenderName', 'paymentSenderNumber',
-          'buyerPaymentReference', 'paymentAmount', 'notes', 'status', 'riderId',
-          'riderName', 'salesAttributionStatus', 'createdAt', 'source'
+          'customerUid', 'customer', 'items', 'subtotal',
+          'deliveryFee', 'paymentMethod', 'paymentStatus',
+          'paymentSenderName', 'paymentSenderNumber',
+          'buyerPaymentReference', 'paymentAmount',
+          'notes', 'status', 'riderId', 'riderName',
+          'salesAttributionStatus', 'createdAt', 'source'
         ])
         && d.keys().hasOnly([
-          'customerUid', 'customer', 'items', 'subtotal', 'deliveryFee',
-          'paymentMethod', 'paymentStatus', 'paymentSenderName', 'paymentSenderNumber',
-          'buyerPaymentReference', 'paymentAmount', 'notes', 'status', 'riderId',
-          'riderName', 'salesAttributionStatus', 'createdAt', 'source'
+          'customerUid', 'customer', 'items', 'subtotal',
+          'deliveryFee', 'paymentMethod', 'paymentStatus',
+          'paymentSenderName', 'paymentSenderNumber',
+          'buyerPaymentReference', 'paymentAmount',
+          'notes', 'status', 'riderId', 'riderName',
+          'salesAttributionStatus', 'createdAt', 'source'
         ])
         && d.customerUid == request.auth.uid
         && validCustomer()
         && validItems()
         && calculatedSubtotal()
         && d.deliveryFee is number
-        && d.deliveryFee == (d.customer.area == 'San Carlos City Proper' ? 30 : 0)
-        && d.paymentMethod in ['COD', 'GCash', 'BDO Bank Transfer']
+        && d.deliveryFee == (
+          d.customer.area == 'San Carlos City Proper' ? 30 : 0
+        )
+        && d.paymentMethod in [
+          'COD', 'GCash', 'BDO Bank Transfer'
+        ]
         && d.paymentStatus == 'Pending'
-        && d.paymentSenderName is string && d.paymentSenderName.size() <= 100
-        && d.paymentSenderNumber is string && d.paymentSenderNumber.size() <= 30
-        && d.buyerPaymentReference is string && d.buyerPaymentReference.size() <= 80
-        && d.paymentAmount is number && d.paymentAmount >= 0
-        && (d.paymentMethod != 'COD' || (d.paymentSenderName == '' && d.paymentSenderNumber == '' && d.buyerPaymentReference == '' && d.paymentAmount == 0))
-        && (d.paymentMethod == 'COD' || d.paymentSenderName.size() >= 2)
-        && d.notes is string && d.notes.size() <= 500
+        && d.paymentSenderName is string
+        && d.paymentSenderName.size() <= 100
+        && d.paymentSenderNumber is string
+        && d.paymentSenderNumber.size() <= 30
+        && d.buyerPaymentReference is string
+        && d.buyerPaymentReference.size() <= 80
+        && d.paymentAmount is number
+        && d.paymentAmount == 0
+        && (
+          d.paymentMethod == 'COD'
+          ? (
+            d.paymentSenderName == ''
+            && d.paymentSenderNumber == ''
+            && d.buyerPaymentReference == ''
+          )
+          : d.paymentSenderName.size() >= 2
+        )
+        && d.notes is string
+        && d.notes.size() <= 500
         && d.status == 'New'
-        && d.riderId == '' && d.riderName == ''
+        && d.riderId == ''
+        && d.riderName == ''
         && d.salesAttributionStatus == 'Pending owner review'
         && d.createdAt == request.time
         && d.source == 'online';
     }
 
     function onlyFeeFieldsChanged() {
-      return request.resource.data.diff(resource.data).affectedKeys()
-        .hasOnly(['deliveryFee', 'deliveryFeeConfirmedAt'])
-        && request.resource.data.diff(resource.data).affectedKeys()
-          .hasAll(['deliveryFeeConfirmedAt'])
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+
+      return changed.hasOnly([
+          'deliveryFee', 'deliveryFeeConfirmedAt'
+        ])
+        && changed.hasAll(['deliveryFeeConfirmedAt'])
         && resource.data.status == 'New'
         && !('deliveryFeeAccepted' in resource.data)
         && request.resource.data.deliveryFee is number
         && request.resource.data.deliveryFee >= 0
         && request.resource.data.deliveryFee <= 100000
         && request.resource.data.deliveryFeeConfirmedAt == request.time
-        && (resource.data.customer.area != 'Store Pickup' || request.resource.data.deliveryFee == 0);
+        && (
+          resource.data.customer.area != 'Store Pickup'
+          || request.resource.data.deliveryFee == 0
+        );
     }
 
-    // Customer accepts the owner's final delivery-fee quote. One-time, same UID only.
     function onlyCustomerQuoteAcceptanceChanged() {
       let changed = request.resource.data.diff(resource.data).affectedKeys();
-      let online = resource.data.paymentMethod in ['GCash', 'BDO Bank Transfer'];
+      let online = resource.data.paymentMethod in [
+        'GCash', 'BDO Bank Transfer'
+      ];
+
       return isAnonymousCustomer()
         && resource.data.customerUid == request.auth.uid
         && resource.data.status == 'New'
         && 'deliveryFeeConfirmedAt' in resource.data
         && !('deliveryFeeAccepted' in resource.data)
-        && changed.hasOnly(['deliveryFeeAccepted', 'deliveryFeeAcceptedAt', 'paymentAmount', 'postQuotePaymentReference'])
-        && changed.hasAll(['deliveryFeeAccepted', 'deliveryFeeAcceptedAt'])
+        && changed.hasOnly([
+          'deliveryFeeAccepted',
+          'deliveryFeeAcceptedAt',
+          'paymentAmount',
+          'postQuotePaymentReference'
+        ])
+        && changed.hasAll([
+          'deliveryFeeAccepted',
+          'deliveryFeeAcceptedAt'
+        ])
         && request.resource.data.deliveryFeeAccepted == true
         && request.resource.data.deliveryFeeAcceptedAt == request.time
-        && ((!online && !changed.hasAny(['paymentAmount', 'postQuotePaymentReference']))
-          || (online
-            && changed.hasAll(['paymentAmount', 'postQuotePaymentReference'])
+        && (
+          (
+            !online
+            && !changed.hasAny([
+              'paymentAmount', 'postQuotePaymentReference'
+            ])
+          )
+          ||
+          (
+            online
+            && changed.hasAll([
+              'paymentAmount', 'postQuotePaymentReference'
+            ])
             && request.resource.data.paymentAmount is number
-            && request.resource.data.paymentAmount == resource.data.subtotal + resource.data.deliveryFee
+            && request.resource.data.paymentAmount
+              == resource.data.subtotal + resource.data.deliveryFee
             && request.resource.data.postQuotePaymentReference is string
             && request.resource.data.postQuotePaymentReference.size() >= 4
-            && request.resource.data.postQuotePaymentReference.size() <= 80));
+            && request.resource.data.postQuotePaymentReference.size() <= 80
+          )
+        );
     }
 
     function onlyPaymentVerificationChanged() {
       let changed = request.resource.data.diff(resource.data).affectedKeys();
-      return changed.hasOnly(['paymentStatus', 'paymentVerifiedReference', 'paymentVerifiedAt', 'paymentVerifiedBy'])
-        && changed.hasAll(['paymentStatus', 'paymentVerifiedReference', 'paymentVerifiedAt', 'paymentVerifiedBy'])
+
+      return changed.hasOnly([
+          'paymentStatus',
+          'paymentVerifiedReference',
+          'paymentVerifiedAt',
+          'paymentVerifiedBy'
+        ])
+        && changed.hasAll([
+          'paymentStatus',
+          'paymentVerifiedReference',
+          'paymentVerifiedAt',
+          'paymentVerifiedBy'
+        ])
         && resource.data.status == 'New'
-        && resource.data.paymentMethod in ['GCash', 'BDO Bank Transfer']
+        && resource.data.paymentMethod in [
+          'GCash', 'BDO Bank Transfer'
+        ]
         && resource.data.paymentStatus == 'Pending'
         && resource.data.deliveryFeeAccepted == true
         && request.resource.data.paymentStatus == 'Verified'
@@ -171,113 +256,177 @@ service cloud.firestore {
         && request.resource.data.paymentVerifiedBy == request.auth.uid;
     }
 
-    // Rider profile document IDs are the rider Auth UIDs for UID-linked profiles.
-    // Only approved, active Rider or Rider/Salesman profiles are eligible.
-    // V11.3: one rider profile document lookup per eligibility check.
-    function eligibleRider(riderId, riderName, riderRole) {
-      let profile = get(/databases/$(database)/documents/riderProfiles/$(riderId));
-      return riderId is string && riderId.size() > 0
-        && riderName is string && riderName.size() > 0
-        && riderRole in ['Rider', 'Rider/Salesman']
-        && profile.data.approvalStatus == 'Approved'
+    function riderProfileIsEligible(riderId, riderName, riderRole) {
+      let profile = get(
+        /databases/$(database)/documents/riderProfiles/$(riderId)
+      );
+
+      return profile.data.approvalStatus == 'Approved'
         && profile.data.status == 'Active'
         && profile.data.name == riderName
         && profile.data.role == riderRole;
     }
 
+    function eligibleRider(riderId, riderName, riderRole) {
+      return riderId is string
+        && riderId.size() > 0
+        && riderName is string
+        && riderName.size() > 0
+        && riderRole in ['Rider', 'Rider/Salesman']
+        && riderProfileIsEligible(riderId, riderName, riderRole);
+    }
+
     function validStatusTransition() {
       let changed = request.resource.data.diff(resource.data).affectedKeys();
       let next = request.resource.data.status;
+
       return (
-        // New -> Confirmed
-        (resource.data.status == 'New' && next == 'Confirmed'
+        (
+          resource.data.status == 'New'
+          && next == 'Confirmed'
           && changed.hasOnly(['status', 'ownerConfirmedAt'])
           && changed.hasAll(['status', 'ownerConfirmedAt'])
           && request.resource.data.ownerConfirmedAt == request.time
           && 'deliveryFeeConfirmedAt' in resource.data
           && resource.data.deliveryFeeAccepted == true
-          && (resource.data.paymentMethod == 'COD' || resource.data.paymentStatus == 'Verified'))
+          && (
+            resource.data.paymentMethod == 'COD'
+            || resource.data.paymentStatus == 'Verified'
+          )
+        )
         ||
-        // Confirmed -> Assigned
-        (resource.data.status == 'Confirmed' && next == 'Assigned'
-          && changed.hasOnly(['status', 'riderId', 'riderName', 'riderRole', 'assignedAt', 'salesAttributionStatus'])
-          && changed.hasAll(['status', 'riderId', 'riderName', 'riderRole', 'assignedAt'])
-          && eligibleRider(request.resource.data.riderId, request.resource.data.riderName, request.resource.data.riderRole)
+        (
+          resource.data.status == 'Confirmed'
+          && next == 'Assigned'
+          && changed.hasOnly([
+            'status', 'riderId', 'riderName', 'riderRole',
+            'assignedAt', 'salesAttributionStatus'
+          ])
+          && changed.hasAll([
+            'status', 'riderId', 'riderName', 'riderRole', 'assignedAt'
+          ])
+          && eligibleRider(
+            request.resource.data.riderId,
+            request.resource.data.riderName,
+            request.resource.data.riderRole
+          )
           && request.resource.data.assignedAt == request.time
-          && request.resource.data.salesAttributionStatus == 'Assigned to rider')
+          && request.resource.data.salesAttributionStatus == 'Assigned to rider'
+        )
         ||
-        // Assigned -> Assigned (reassignment): status is unchanged, so it is NOT
-        // expected to appear in affectedKeys(). Require a real rider-field change.
-        (resource.data.status == 'Assigned' && next == 'Assigned'
-          && changed.hasOnly(['riderId', 'riderName', 'riderRole', 'assignedAt', 'salesAttributionStatus'])
+        (
+          resource.data.status == 'Assigned'
+          && next == 'Assigned'
+          && changed.hasOnly([
+            'riderId', 'riderName', 'riderRole',
+            'assignedAt', 'salesAttributionStatus'
+          ])
           && changed.hasAny(['riderId', 'riderName', 'riderRole'])
           && changed.hasAll(['assignedAt'])
-          && eligibleRider(request.resource.data.riderId, request.resource.data.riderName, request.resource.data.riderRole)
+          && eligibleRider(
+            request.resource.data.riderId,
+            request.resource.data.riderName,
+            request.resource.data.riderRole
+          )
           && request.resource.data.assignedAt == request.time
-          && request.resource.data.salesAttributionStatus == 'Assigned to rider')
+          && request.resource.data.salesAttributionStatus == 'Assigned to rider'
+        )
         ||
-        // Assigned -> Out for Delivery (owner-only in this test phase)
-        (resource.data.status == 'Assigned' && next == 'Out for Delivery'
+        (
+          resource.data.status == 'Assigned'
+          && next == 'Out for Delivery'
           && changed.hasOnly(['status', 'outForDeliveryAt'])
           && changed.hasAll(['status', 'outForDeliveryAt'])
-          && request.resource.data.outForDeliveryAt == request.time)
+          && request.resource.data.outForDeliveryAt == request.time
+        )
         ||
-        // Out for Delivery -> Delivered (owner-only in this test phase; NOT secure rider PIN proof)
-        (resource.data.status == 'Out for Delivery' && next == 'Delivered'
-          && changed.hasOnly(['status', 'deliveredAt', 'salesAttributionStatus'])
+        (
+          resource.data.status == 'Out for Delivery'
+          && next == 'Delivered'
+          && changed.hasOnly([
+            'status', 'deliveredAt', 'salesAttributionStatus'
+          ])
           && changed.hasAll(['status', 'deliveredAt'])
           && request.resource.data.deliveredAt == request.time
-          && request.resource.data.salesAttributionStatus == 'Delivered — owner review required')
+          && request.resource.data.salesAttributionStatus
+            == 'Delivered — owner review required'
+        )
         ||
-        // Cancellation
-        (resource.data.status in ['New', 'Confirmed', 'Assigned'] && next == 'Cancelled'
-          && changed.hasOnly(['status', 'cancelReason', 'cancelledAt', 'salesAttributionStatus'])
+        (
+          resource.data.status in ['New', 'Confirmed', 'Assigned']
+          && next == 'Cancelled'
+          && changed.hasOnly([
+            'status', 'cancelReason', 'cancelledAt',
+            'salesAttributionStatus'
+          ])
           && changed.hasAll(['status', 'cancelReason', 'cancelledAt'])
           && request.resource.data.cancelReason is string
           && request.resource.data.cancelReason.size() >= 1
           && request.resource.data.cancelReason.size() <= 300
           && request.resource.data.cancelledAt == request.time
-          && request.resource.data.salesAttributionStatus == 'Cancelled — no incentive')
+          && request.resource.data.salesAttributionStatus
+            == 'Cancelled — no incentive'
+        )
       );
     }
 
     match /publicCatalog/{productId} {
-      allow get, list: if isAnonymousCustomer() && resource.data.active == true;
+      allow get, list: if isAnonymousCustomer()
+        && resource.data.active == true;
       allow create, update, delete: if isTestOwner();
     }
 
     match /customerOrders/{orderId} {
       allow create: if validCustomerOrderCreate();
+
       allow get: if isTestOwner()
-        || (isAnonymousCustomer() && resource.data.customerUid == request.auth.uid);
+        || (
+          isAnonymousCustomer()
+          && resource.data.customerUid == request.auth.uid
+        );
+
       allow list: if isTestOwner();
-      allow update: if (isTestOwner()
-        && (onlyFeeFieldsChanged() || onlyPaymentVerificationChanged() || validStatusTransition()))
-        || onlyCustomerQuoteAcceptanceChanged();
+
+      allow update: if (
+        isTestOwner()
+        && (
+          onlyFeeFieldsChanged()
+          || onlyPaymentVerificationChanged()
+          || validStatusTransition()
+        )
+      ) || onlyCustomerQuoteAcceptanceChanged();
+
       allow delete: if false;
     }
 
     match /storeProducts/{productId} {
       allow read, write: if isTestOwner();
     }
+
     match /storeSettings/{settingsId} {
       allow read, write: if isTestOwner();
     }
+
     match /riderProfiles/{uid} {
       allow read, write: if isTestOwner();
     }
+
     match /riderAttendance/{attendanceId} {
       allow read, write: if isTestOwner();
     }
+
     match /riderAssignments/{assignmentId} {
       allow read, write: if isTestOwner();
     }
+
     match /storeSales/{saleId} {
       allow read, write: if isTestOwner();
     }
+
     match /riderOrders/{orderId} {
       allow read, write: if false;
     }
+
     match /deliverySecrets/{orderId} {
       allow read, write: if false;
     }
