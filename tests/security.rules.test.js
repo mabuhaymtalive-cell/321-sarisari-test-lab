@@ -537,12 +537,19 @@ describe("321 Sari-Sari Store — M10 TEST LAB Rules", function () {
     )
   );
 
-  it("T33 Owner can confirm COD order after fee acceptance", async () => {
-    const ref = await prepareConfirmedOrder();
+    it("T33 Owner can confirm COD order after fee acceptance", async () => {
+    const ref = doc(ownerDb(), "customerOrders", ORDER);
 
-    await assertSucceeds(
-      getDoc(ref)
-    );
+    await ownerConfirmsFee(ref);
+    await customerAcceptsQuote("seed-customer", ref, false);
+
+    await assertSucceeds(ownerConfirmsOrder(ref));
+
+    const snapshot = await getDoc(ref);
+
+    if (!snapshot.exists() || snapshot.data().status !== "Confirmed") {
+      throw new Error("Order was not successfully confirmed.");
+    }
   });
 
   it("T34 Owner can assign approved active Juan", async () => {
@@ -686,9 +693,10 @@ describe("321 Sari-Sari Store — M10 TEST LAB Rules", function () {
     )
   );
 
-  it("T44 Owner cannot delete rider profile through delete operation", () =>
-    assertSucceeds(
-      getDoc(doc(ownerDb(), "riderProfiles", JUAN))
-    )
-  );
-});
+    it("T44 Owner cannot permanently delete rider profile", async () => {
+    const riderRef = doc(ownerDb(), "riderProfiles", JUAN);
+
+    await assertFails(deleteDoc(riderRef));
+
+    await assertSucceeds(getDoc(riderRef));
+  });
