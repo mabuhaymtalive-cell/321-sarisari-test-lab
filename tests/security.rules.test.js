@@ -700,4 +700,19 @@ describe("321 Sari-Sari Store — M10 TEST LAB Rules", function () {
 
     await assertSucceeds(getDoc(riderRef));
   });
+  it("T45 Owner can archive rider profile without deleting it", async () => {
+    const riderRef = doc(ownerDb(), "riderProfiles", JUAN);
+
+    await assertSucceeds(
+      updateDoc(riderRef, {
+        status: "Archived"
+      })
+    );
+
+    const snapshot = await getDoc(riderRef);
+
+    if (!snapshot.exists() || snapshot.data().status !== "Archived") {
+      throw new Error("Rider profile was not successfully archived.");
+    }
+  });
 });
