@@ -700,3 +700,4 @@ describe("321 Sari-Sari Store — M10 TEST LAB Rules", function () {
 
     await assertSucceeds(getDoc(riderRef));
   });
+});
