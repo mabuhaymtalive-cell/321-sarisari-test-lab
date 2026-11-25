@@ -408,8 +408,15 @@ service cloud.firestore {
     }
 
     match /riderProfiles/{uid} {
-      allow read, write: if isTestOwner();
-    }
+  // Owner can view and manage rider profiles.
+  allow read: if isTestOwner();
+
+  // Owner can create new profiles and update existing profiles.
+  allow create, update: if isTestOwner();
+
+  // Permanent deletion is never allowed.
+  allow delete: if false;
+}
 
     match /riderAttendance/{attendanceId} {
       allow read, write: if isTestOwner();
