@@ -25,8 +25,80 @@ $('login').onclick=async()=>{const b=$('login');b.disabled=true;try{const a=awai
 $('refresh').onclick=refreshAll;
 $('logout').onclick=()=>{ownerToken='';ownerUid='';orders=[];riders=[];$('orders').innerHTML='<p class="muted">Signed out.</p>';$('riderList').innerHTML='<p class="muted">Signed out.</p>';$('refresh').disabled=true;$('logout').disabled=true;$('addRider').disabled=true;status($('authStatus'),'Signed out.')};
 async function refreshAll(){if(!ownerToken||ownerUid!==OWNER_UID)return;try{const [o,r]=await Promise.all([queryCollection('customerOrders',100),queryCollection('riderProfiles',100)]);orders=o.sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||'')));riders=r;renderRiders();renderOrders();status($('authStatus'),`Loaded ${orders.length} order(s) and ${riders.length} rider profiles from TEST LAB.`,'good')}catch(e){status($('authStatus'),'Read failed: '+e.message,'bad')}}
-function renderRiders(){const approved=riders.filter(r=>r.approvalStatus==='Approved'&&r.status==='Active');$('riderList').innerHTML=riders.length?riders.map(r=>`<div class="rider"><h3>${esc(r.name||'Unnamed')}</h3><div class="muted">${esc(r.phone||'No phone')} · ${esc(r.role||'Rider/Salesman')}</div><p><span class="tag">${esc(r.approvalStatus||'Pending Approval')}</span> <span class="tag">${esc(r.status||'Active')}</span></p>${r.approvalStatus!=='Approved'?`<button class="secondary" data-approve-rider="${esc(r.id)}">Approve profile</button>`:''}</div>`).join(''):'<p class="muted">No TEST rider profiles found.</p>';$('riderStatus').textContent=`${approved.length} approved active rider/salesman profiles available.`;document.querySelectorAll('[data-approve-rider]').forEach(b=>b.onclick=()=>approveRider(b.dataset.approveRider))}
-function renderOrders(){$('orders').innerHTML=orders.map(o=>{const canConfirm=o.status==='New'&&!!o.deliveryFeeConfirmedAt&&o.deliveryFeeAccepted===true&&(o.paymentMethod==='COD'||o.paymentStatus==='Verified'),canAssign=['Confirmed','Assigned'].includes(o.status),approved=riders.filter(r=>r.approvalStatus==='Approved'&&r.status==='Active');const online=['GCash','BDO Bank Transfer'].includes(o.paymentMethod)?`<div class="panel" style="background:#f5f8ff"><b>${esc(o.paymentMethod)} payment details</b><p><b>Buyer sender name:</b> ${esc(o.paymentSenderName||'Not supplied')}<br><b>Buyer sender number/account:</b> ${esc(o.paymentSenderNumber||'Not supplied')}<br><b>Buyer-submitted reference:</b> ${esc(o.buyerPaymentReference||'Not supplied')}<br><b>Post-quote reference:</b> ${esc(o.postQuotePaymentReference||'Not supplied')}<br><b>Buyer payment amount:</b> ${peso(o.paymentAmount)}<br><b>Final fee accepted:</b> ${o.deliveryFeeAccepted?'Yes':'No'}</p><p><b>Payment status:</b> ${esc(o.paymentStatus||'Pending')}</p>${o.paymentStatus==='Pending'&&o.status==='New'&&o.deliveryFeeAccepted?`<p class="muted">Manually inspect the actual recipient account. Match sender, amount and transaction. A buyer-submitted reference or screenshot is not proof by itself.</p><label for="verify-ref-${esc(o.id)}">Actual recipient-side reference</label><input id="verify-ref-${esc(o.id)}" maxlength="80" minlength="4" placeholder="Enter verified recipient reference"><button class="secondary" data-verify-payment="${esc(o.id)}">Verify Payment Received</button>`:`${o.paymentStatus==='Pending'&&!o.deliveryFeeAccepted?'<p class="muted">Waiting for customer to accept the owner-confirmed final fee before payment verification.</p>':''}<p><b>Recipient-side verified reference:</b> ${esc(o.paymentVerifiedReference||'Not recorded')}<br><b>Verified by:</b> ${esc(o.paymentVerifiedBy||'Not recorded')}<br><b>Verified at:</b> ${esc(o.paymentVerifiedAt||'Not recorded')}</p>`}</div>`:'';return `<article class="order"><h3>${esc(o.customer?.name||'Customer')} <span class="tag">${esc(o.status||'New')}</span></h3><div class="muted">${esc(o.customer?.phone||'')} · ${esc(o.customer?.area||'')}<br>${esc(o.customer?.address||'')}</div><div class="items">${(o.items||[]).map(i=>`${esc(i.name)} × ${Number(i.quantity)||0} — ${peso(i.lineTotal)}`).join('<br>')}</div><p><b>Subtotal:</b> ${peso(o.subtotal)} · <b>Delivery fee:</b> ${peso(o.deliveryFee||0)}</p><p><b>Payment:</b> ${esc(o.paymentMethod||'')} (${esc(o.paymentStatus||'Pending')})</p>${online}<p><b>Estimated / current total:</b> ${peso(Number(o.subtotal||0)+Number(o.deliveryFee||0))}</p><p><b>Assigned rider:</b> ${esc(o.riderName||'Not assigned')}</p><label for="fee-${esc(o.id)}">Owner-confirmed delivery fee (₱)</label><input id="fee-${esc(o.id)}" type="number" min="0" max="100000" step="0.01" value="${Number(o.deliveryFee)||0}" ${o.status!=='New'||o.deliveryFeeAccepted?'disabled':''}><button class="secondary" data-fee="${esc(o.id)}" ${o.status!=='New'||o.deliveryFeeAccepted?'disabled':''}>Save delivery fee</button><label for="assign-${esc(o.id)}">Approved active rider / salesman</label><select id="assign-${esc(o.id)}" ${!canAssign?'disabled':''}><option value="">Choose rider/salesman</option>${approved.map(r=>`<option value="${esc(r.id)}" ${r.id===o.riderId?'selected':''}>${esc(r.name)} — ${esc(r.role)}</option>`).join('')}</select><div class="actions"><button data-confirm="${esc(o.id)}" ${!canConfirm?'disabled':''}>Confirm order</button><button data-assign="${esc(o.id)}" ${!canAssign||!approved.length?'disabled':''}>Assign rider</button></div><p class="muted">Order ID: ${esc(o.id)}<br>${o.paymentMethod!=='COD'&&o.paymentStatus!=='Verified'?'Online payment is Pending; verify actual receipt before confirming.':'Confirm delivery fee before confirming this order.'}</p></article>`}).join('')||'<p class="muted">No online orders found.</p>';document.querySelectorAll('[data-fee]').forEach(b=>b.onclick=()=>saveFee(b.dataset.fee));document.querySelectorAll('[data-verify-payment]').forEach(b=>b.onclick=()=>verifyPayment(b.dataset.verifyPayment));document.querySelectorAll('[data-confirm]').forEach(b=>b.onclick=()=>confirmOrder(b.dataset.confirm));document.querySelectorAll('[data-assign]').forEach(b=>b.onclick=()=>assignRider(b.dataset.assign))}
+function renderRiders(){
+  const approved = riders.filter(
+    r => r.approvalStatus === 'Approved' && r.status === 'Active'
+  );
+
+  $('riderList').innerHTML = riders.length
+    ? riders.map(r => {
+        const archived = r.status === 'Archived';
+
+        const activeAssignments = orders.filter(o =>
+          o.riderId === r.id &&
+          ['Confirmed', 'Assigned', 'Out for Delivery'].includes(o.status)
+        );
+
+        return `
+          <div class="rider">
+            <h3>${esc(r.name || 'Unnamed')}</h3>
+
+            <div class="muted">
+              ${esc(r.phone || 'No phone')} ·
+              ${esc(r.role || 'Rider/Salesman')}
+            </div>
+
+            <p>
+              <span class="tag">
+                ${esc(r.approvalStatus || 'Pending Approval')}
+              </span>
+              <span class="tag">${esc(r.status || 'Active')}</span>
+            </p>
+
+            ${
+              !archived && r.approvalStatus !== 'Approved'
+                ? `<button class="secondary"
+                    data-approve-rider="${esc(r.id)}">
+                    Approve profile
+                  </button>`
+                : ''
+            }
+
+            ${
+              archived
+                ? `<button class="secondary"
+                    data-restore-rider="${esc(r.id)}">
+                    Restore rider
+                  </button>`
+                : `<button class="secondary"
+                    data-archive-rider="${esc(r.id)}"
+                    ${activeAssignments.length ? 'disabled' : ''}>
+                    Archive rider
+                  </button>`
+            }
+
+            ${
+              activeAssignments.length
+                ? `<p class="muted">Cannot archive: rider has ${activeAssignments.length} active assignment(s).</p>`
+                : ''
+            }
+          </div>
+        `;
+      }).join('')
+    : '<p class="muted">No TEST rider profiles found.</p>';
+
+  $('riderStatus').textContent =
+    `${approved.length} approved active rider/salesman profiles available.`;
+
+  document.querySelectorAll('[data-approve-rider]')
+    .forEach(b => b.onclick = () => approveRider(b.dataset.approveRider));
+
+  document.querySelectorAll('[data-archive-rider]')
+    .forEach(b => b.onclick = () => archiveRider(b.dataset.archiveRider));
+
+  document.querySelectorAll('[data-restore-rider]')
+    .forEach(b => b.onclick = () => restoreRider(b.dataset.restoreRider));
+}function renderOrders(){$('orders').innerHTML=orders.map(o=>{const canConfirm=o.status==='New'&&!!o.deliveryFeeConfirmedAt&&o.deliveryFeeAccepted===true&&(o.paymentMethod==='COD'||o.paymentStatus==='Verified'),canAssign=['Confirmed','Assigned'].includes(o.status),approved=riders.filter(r=>r.approvalStatus==='Approved'&&r.status==='Active');const online=['GCash','BDO Bank Transfer'].includes(o.paymentMethod)?`<div class="panel" style="background:#f5f8ff"><b>${esc(o.paymentMethod)} payment details</b><p><b>Buyer sender name:</b> ${esc(o.paymentSenderName||'Not supplied')}<br><b>Buyer sender number/account:</b> ${esc(o.paymentSenderNumber||'Not supplied')}<br><b>Buyer-submitted reference:</b> ${esc(o.buyerPaymentReference||'Not supplied')}<br><b>Post-quote reference:</b> ${esc(o.postQuotePaymentReference||'Not supplied')}<br><b>Buyer payment amount:</b> ${peso(o.paymentAmount)}<br><b>Final fee accepted:</b> ${o.deliveryFeeAccepted?'Yes':'No'}</p><p><b>Payment status:</b> ${esc(o.paymentStatus||'Pending')}</p>${o.paymentStatus==='Pending'&&o.status==='New'&&o.deliveryFeeAccepted?`<p class="muted">Manually inspect the actual recipient account. Match sender, amount and transaction. A buyer-submitted reference or screenshot is not proof by itself.</p><label for="verify-ref-${esc(o.id)}">Actual recipient-side reference</label><input id="verify-ref-${esc(o.id)}" maxlength="80" minlength="4" placeholder="Enter verified recipient reference"><button class="secondary" data-verify-payment="${esc(o.id)}">Verify Payment Received</button>`:`${o.paymentStatus==='Pending'&&!o.deliveryFeeAccepted?'<p class="muted">Waiting for customer to accept the owner-confirmed final fee before payment verification.</p>':''}<p><b>Recipient-side verified reference:</b> ${esc(o.paymentVerifiedReference||'Not recorded')}<br><b>Verified by:</b> ${esc(o.paymentVerifiedBy||'Not recorded')}<br><b>Verified at:</b> ${esc(o.paymentVerifiedAt||'Not recorded')}</p>`}</div>`:'';return `<article class="order"><h3>${esc(o.customer?.name||'Customer')} <span class="tag">${esc(o.status||'New')}</span></h3><div class="muted">${esc(o.customer?.phone||'')} · ${esc(o.customer?.area||'')}<br>${esc(o.customer?.address||'')}</div><div class="items">${(o.items||[]).map(i=>`${esc(i.name)} × ${Number(i.quantity)||0} — ${peso(i.lineTotal)}`).join('<br>')}</div><p><b>Subtotal:</b> ${peso(o.subtotal)} · <b>Delivery fee:</b> ${peso(o.deliveryFee||0)}</p><p><b>Payment:</b> ${esc(o.paymentMethod||'')} (${esc(o.paymentStatus||'Pending')})</p>${online}<p><b>Estimated / current total:</b> ${peso(Number(o.subtotal||0)+Number(o.deliveryFee||0))}</p><p><b>Assigned rider:</b> ${esc(o.riderName||'Not assigned')}</p><label for="fee-${esc(o.id)}">Owner-confirmed delivery fee (₱)</label><input id="fee-${esc(o.id)}" type="number" min="0" max="100000" step="0.01" value="${Number(o.deliveryFee)||0}" ${o.status!=='New'||o.deliveryFeeAccepted?'disabled':''}><button class="secondary" data-fee="${esc(o.id)}" ${o.status!=='New'||o.deliveryFeeAccepted?'disabled':''}>Save delivery fee</button><label for="assign-${esc(o.id)}">Approved active rider / salesman</label><select id="assign-${esc(o.id)}" ${!canAssign?'disabled':''}><option value="">Choose rider/salesman</option>${approved.map(r=>`<option value="${esc(r.id)}" ${r.id===o.riderId?'selected':''}>${esc(r.name)} — ${esc(r.role)}</option>`).join('')}</select><div class="actions"><button data-confirm="${esc(o.id)}" ${!canConfirm?'disabled':''}>Confirm order</button><button data-assign="${esc(o.id)}" ${!canAssign||!approved.length?'disabled':''}>Assign rider</button></div><p class="muted">Order ID: ${esc(o.id)}<br>${o.paymentMethod!=='COD'&&o.paymentStatus!=='Verified'?'Online payment is Pending; verify actual receipt before confirming.':'Confirm delivery fee before confirming this order.'}</p></article>`}).join('')||'<p class="muted">No online orders found.</p>';document.querySelectorAll('[data-fee]').forEach(b=>b.onclick=()=>saveFee(b.dataset.fee));document.querySelectorAll('[data-verify-payment]').forEach(b=>b.onclick=()=>verifyPayment(b.dataset.verifyPayment));document.querySelectorAll('[data-confirm]').forEach(b=>b.onclick=()=>confirmOrder(b.dataset.confirm));document.querySelectorAll('[data-assign]').forEach(b=>b.onclick=()=>assignRider(b.dataset.assign))}
 function docName(c,id){return 'projects/'+PROJECT+'/databases/(default)/documents/'+c+'/'+id}
 async function commitUpdate(c,id,fields,transforms=[]){const w={update:{name:docName(c,id),fields:fsFields(fields)},updateMask:{fieldPaths:Object.keys(fields)}};if(transforms.length)w.updateTransforms=transforms;await fsFetch(BASE+':commit',{method:'POST',body:JSON.stringify({writes:[w]})})}
 async function saveFee(id){const o=orders.find(x=>x.id===id);if(!o||o.status!=='New'){status($('authStatus'),'Delivery fee can only be changed while order is New.','bad');return}const fee=Number($('fee-'+id).value);if(!Number.isFinite(fee)||fee<0||fee>100000){status($('authStatus'),'Enter a valid delivery fee from ₱0 to ₱100,000.','bad');return}if(o.customer?.area==='Store Pickup'&&fee!==0){status($('authStatus'),'Store Pickup must have ₱0 delivery fee.','bad');return}try{await commitUpdate('customerOrders',id,{deliveryFee:fee},[{fieldPath:'deliveryFeeConfirmedAt',setToServerValue:'REQUEST_TIME'}]);await refreshAll()}catch(e){status($('authStatus'),'Saving fee failed: '+e.message,'bad')}}
@@ -35,4 +107,54 @@ async function confirmOrder(id){const o=orders.find(x=>x.id===id);if(!o||o.statu
 async function assignRider(id){const o=orders.find(x=>x.id===id);if(!o||!['Confirmed','Assigned'].includes(o.status))return;const rid=$('assign-'+id).value,r=riders.find(x=>x.id===rid&&x.approvalStatus==='Approved'&&x.status==='Active');if(!r){status($('authStatus'),'Choose an approved active rider/salesman first.','bad');return}try{await commitUpdate('customerOrders',id,{status:'Assigned',riderId:r.id,riderName:r.name,riderRole:r.role||'Rider/Salesman',salesAttributionStatus:'Assigned to rider'},[{fieldPath:'assignedAt',setToServerValue:'REQUEST_TIME'}]);await refreshAll()}catch(e){status($('authStatus'),'Rider assignment failed: '+e.message,'bad')}}
 $('addRider').onclick=async()=>{const name=$('riderName').value.trim(),phone=$('riderPhone').value.trim(),role=$('riderRole').value,notes=$('riderNotes').value.trim();if(name.length<2){status($('riderStatus'),'Enter rider/salesman name (at least 2 characters).','bad');return}const id='r_'+crypto.randomUUID().replaceAll('-','');try{const fields={id,name,phone,role,status:'Active',approvalStatus:'Pending Approval',notes},w={update:{name:docName('riderProfiles',id),fields:fsFields(fields)},updateMask:{fieldPaths:Object.keys(fields)},updateTransforms:[{fieldPath:'createdAt',setToServerValue:'REQUEST_TIME'}]};await fsFetch(BASE+':commit',{method:'POST',body:JSON.stringify({writes:[w]})});$('riderName').value='';$('riderPhone').value='';$('riderNotes').value='';await refreshAll();status($('riderStatus'),'Rider/salesman saved as Pending Approval. Approve before assigning.','good')}catch(e){status($('riderStatus'),'Profile save failed: '+e.message,'bad')}}
 async function approveRider(id){const r=riders.find(x=>x.id===id);if(!r)return;if(!confirm('Approve '+r.name+' for TEST LAB owner assignment?'))return;try{const w={update:{name:docName('riderProfiles',id),fields:fsFields({approvalStatus:'Approved'})},updateMask:{fieldPaths:['approvalStatus']},updateTransforms:[{fieldPath:'approvedAt',setToServerValue:'REQUEST_TIME'}]};await fsFetch(BASE+':commit',{method:'POST',body:JSON.stringify({writes:[w]})});await refreshAll()}catch(e){status($('riderStatus'),'Approval failed: '+e.message,'bad')}}
-</script></body></html>
+async function archiveRider(id) {
+  const r = riders.find(x => x.id === id);
+  if (!r || r.status === 'Archived') return;
+
+  const active = orders.some(o =>
+    o.riderId === id &&
+    ['Confirmed', 'Assigned', 'Out for Delivery'].includes(o.status)
+  );
+
+  if (active) {
+    status($('riderStatus'), 'Cannot archive rider with active assignments.', 'bad');
+    return;
+  }
+
+  if (!confirm('Archive ' + r.name + '? The rider record will be preserved.')) return;
+
+  try {
+    await commitUpdate(
+      'riderProfiles',
+      id,
+      { status: 'Archived' },
+      [{ fieldPath: 'archivedAt', setToServerValue: 'REQUEST_TIME' }]
+    );
+
+    await refreshAll();
+    status($('riderStatus'), 'Rider archived successfully.', 'good');
+  } catch (e) {
+    status($('riderStatus'), 'Archive failed: ' + e.message, 'bad');
+  }
+}
+
+async function restoreRider(id) {
+  const r = riders.find(x => x.id === id);
+  if (!r || r.status !== 'Archived') return;
+
+  if (!confirm('Restore ' + r.name + '?')) return;
+
+  try {
+    await commitUpdate(
+      'riderProfiles',
+      id,
+      { status: 'Active' },
+      [{ fieldPath: 'restoredAt', setToServerValue: 'REQUEST_TIME' }]
+    );
+
+    await refreshAll();
+    status($('riderStatus'), 'Rider restored successfully.', 'good');
+  } catch (e) {
+    status($('riderStatus'), 'Restore failed: ' + e.message, 'bad');
+  }
+}/script></body></html>
